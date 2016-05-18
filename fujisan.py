@@ -6,6 +6,7 @@
 
 import os
 import time
+import shutil
 import pymssql
 from tendo import singleton
 from PIL import Image # Pillow library
@@ -66,16 +67,25 @@ with pymssql.connect(w2khost, w2kuser, w2kpass, "FDIA_DB") as conn:
 			if not os.path.isdir(newdir):
 				os.makedirs(newdir)
 
-			for file in os.listdir(orderdir):
-				im = Image.open(orderdir + "/" + file)
-				filename = newdir + "/" + datestr + "-" + order["name"] + "-" + file.replace(".RAW", "").replace("0000", "")
+			for file in glob.glob(orderdir + "/*.RAW"):
+				im = Image.open(file)
+				filename = newdir + "/" + datestr + "-" + order["name"] + "-" + os.basename(file).replace(".RAW", "").replace("0000", "")
 				out = im.rotate(270, expand = True)
 				out.save(filename + ".tif")
 				print "saving " + filename
 
+			# remove image directory
+			shutil.rmtree(orderdir)
+
 			# remove images associated with order in DB
-			# c.execute("SELECT * FROM dbo.ImageTable WHERE FDIAManageID = '" + order["dir"] + "'")
+			c.execute("DELETE FROM dbo.ImageTable WHERE FDIAManageID = '" + order["dir"] + "'")
+			c.execute("DELETE FROM dbo.OutputImageTable WHERE FDIAManageID = '" + order["dir"] + "'")
 
 			# change status of order to completed in DB
-			c.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order["dir"] + "'")
+			#c.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order["dir"] + "'")
+
+			# or nah, remove it
+			c.execute("DELETE FROM dbo.OrderTable WHERE FDIAManageID = '" + order["dir"] + "'")
+
+			# commit SQL changes to database
 			conn.commit()
