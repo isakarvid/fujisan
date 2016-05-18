@@ -1,0 +1,6 @@
+#### fujisan by isak.asia ####
+
+$ cp *.py ~/Documents/Frontier/Scripts
+$ cp py.fujisan.plist ~/Library/LaunchAgents/
+$ launchctl load ~/Library/LaunchAgents/py.fujisan.plist
+$ launchctl start py.fujisan
