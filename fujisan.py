@@ -60,33 +60,51 @@ def exportimages(images, ordername, extension = ".tif", path = outdir):
 		except IOError as e:
 			print "I/O error({0}): {1}".format(e.errno, e.strerror)
 
-		filename = newdir + datestr + "-" + ordername + "-" + image.id.zfill(3) + extension
-		out = im.rotate(270, expand = True)
-		print "saving -" + filename + "-"
-		out.save(filename)
+		filename = newdir + datestr + "-" + ordername + "-" + image.frame
+
+		# rotate according to setting in scanner
+		out = im.rotate(image.rotation, expand = True)
+
+		print "exporting " + filename + extension
+
+		# check if file already exists
+		if os.path.isfile(filename + extension):
+			filename += "-" + image.id.zfill(2)
+
+		out.save(filename + extension)
 
 # connect to MS SQL database
 with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
 		
 	# reset list of orders waiting to be converted
-	orderclass = namedtuple("order", ["id", "name", "status", "inffile"])
-	imageclass = namedtuple("image", ["id", "imgfile", "inffile"])
+	orderclass = namedtuple("order", ["id", "name", "status", "inffile", "cdorder"])
+	imageclass = namedtuple("image", ["id", "imgfile", "inffile", "rotation", "frame"])
 	orders = []
 
 	with conn.cursor(as_dict = True) as c:
 
 		# retrieve all orders
-		c.execute("SELECT FDIAManageID as id, OrderID as name, Status as status, InfFileName as inffile FROM dbo.OrderTable")
+		c.execute("SELECT o.FDIAManageID as id, o.OrderID as name, o.Status as status, o.InfFileName as inffile, other.FilePath as cdorder FROM dbo.OrderTable o, dbo.OtherTable other")
 
 		# loop through rows
 		for row in c:
 			# append to order list
-			orders.append(orderclass(str(row["id"]), row["name"], row["status"], osxpath(row["inffile"])))
+			orders.append(orderclass(str(row["id"]), row["name"], row["status"], osxpath(row["inffile"]), osxpath(row["cdorder"])))
 
 
 		# loop through orders
 		for order in orders:
 			print order
+
+			# is there a CdOrder.INF file? use it to fetch rotation and actual frame numbers
+			cdorder = []
+			if order.cdorder:
+				f = file(tmp + order.cdorder, "rU")
+				lines = f.read().split("\n")[1:-3]
+				for l in lines:
+					l = l.replace("[", "").replace("]", "").split(" ")[1::]
+					cdorder.append((int(l[0]), int(l[1]), l[2]))
+				
 			c.execute(	"SELECT	o.ImageID as id, o.FileName as imgfile, i.InfFileName as inffile "
 						"FROM dbo.OutputImageTable o, dbo.InputImageTable i "
 						"WHERE o.FDIAManageID = " + order.id + " "
@@ -95,9 +113,15 @@ with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
 
 			images = []
 			for row in c:
-				images.append(imageclass(str(row["id"]), osxpath(row["imgfile"]), osxpath(row["inffile"])))
+				rotation = None
+				frame = None
+				for cd in cdorder:
+					if cd[0] == row["id"]:
+						rotation = [0, 270, 0, 0, 180][cd[1]]
+						frame = cd[2]
+				images.append(imageclass(str(row["id"]), osxpath(row["imgfile"]), osxpath(row["inffile"]), rotation, frame))
 
-			# print images
+			print images
 
 			# (0 = Error, 2 = Waiting to convert)
 			# (4 = Waiting to write, 5 = Completed)
@@ -110,7 +134,7 @@ with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
 				c.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order.id + "'")
 
 			# if completed, remove
-			elif order.status == 5:
+			elif order.status == 25:
 
 				exportimages(images, order.name, ".tif", "/tmp/BACKUP")
 
