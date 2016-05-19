@@ -98,13 +98,13 @@ with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
 
 			# is there a CdOrder.INF file? use it to fetch rotation and actual frame numbers
 			cdorder = []
-			if order.cdorder:
+			if order.cdorder and os.path.isfile(tmp + order.cdorder):
 				f = file(tmp + order.cdorder, "rU")
 				lines = f.read().split("\n")[1:-3]
 				for l in lines:
 					l = l.replace("[", "").replace("]", "").split(" ")[1::]
 					cdorder.append((int(l[0]), int(l[1]), l[2]))
-				
+
 			c.execute(	"SELECT	o.ImageID as id, o.FileName as imgfile, i.InfFileName as inffile "
 						"FROM dbo.OutputImageTable o, dbo.InputImageTable i "
 						"WHERE o.FDIAManageID = " + order.id + " "
@@ -134,9 +134,7 @@ with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
 				c.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order.id + "'")
 
 			# if completed, remove
-			elif order.status == 25:
-
-				exportimages(images, order.name, ".tif", "/tmp/BACKUP")
+			elif order.status == 5:
 
 				# find unique folders associated with current order
 				orderdirs = set()
@@ -170,4 +168,5 @@ with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
 					os.remove(tmp + order.inffile)
 
 			# commit SQL changes to database
+			print "commiting SQL changes"
 			conn.commit()
