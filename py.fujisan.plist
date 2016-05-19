@@ -6,13 +6,14 @@
 	<string>py.fujisan</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/Svartlab/Frontier/Scripts/fujisan.py</string>
+		<string>/usr/bin/python</string>
+		<string>/Users/Svartlab/Documents/Frontier/Scripts/fujisan/fujisan.py</string>
 	</array>
 	<key>StartInterval</key>
 	<integer>10</integer>
 	<key>StandardOutPath</key>
-	<string>/var/log/fujisan.log</string>
-	<key>StardarErrorPath</key>
-	<string>/var/log/fujisan.error</string>
+	<string>/tmp/fujisan.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/fujisan.error.log</string>
 </dict>
 </plist> 
