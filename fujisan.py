@@ -28,6 +28,7 @@ datestr = time.strftime("%Y%m%d")
 # logging function, disable to be less verbose
 def log(what):
 	print time.strftime("%Y-%m-%d %H:%M:%S " + str(what))
+	return
 
 # windows to OS X path conversion
 def osxpath(win2000path):
@@ -56,7 +57,7 @@ if not os.path.isdir(tmp):
 	os.makedirs(tmp)
 
 # image export function, takes list of "image" named tuples, ordername string, extension string and path string
-def exportimages(images, ordername, extension = ".tif", path = outdir):
+def exportimages(exportimages, ordername, extension = ".tif", path = outdir):
 	# generate path for order export
 	newdir = path + "/" + datestr + "-" + ordername + "/"
 	# check if existing, otherwise create
@@ -64,7 +65,7 @@ def exportimages(images, ordername, extension = ".tif", path = outdir):
 		os.makedirs(newdir)
 
 	# loop through images
-	for image in images:
+	for image in exportimages:
 		# try to open the image file
 		try:
 			im = Image.open(tmp + image.imgfile)
@@ -96,116 +97,126 @@ def exportimages(images, ordername, extension = ".tif", path = outdir):
 		# save file
 		out.save(filename + extension)
 
+	return
+
 # connect to MS SQL database
-with pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB") as conn:
-		
-	# create named tuple classes for orders and images
-	orderclass = namedtuple("order", ["id", "name", "status", "inffile", "cdorder"])
-	imageclass = namedtuple("image", ["id", "imgfile", "inffile", "rotation", "frame"])
-
-	# reset list of orders waiting to be converted
-	orders = []
-
-	with conn.cursor(as_dict = True) as c:
-
-		# retrieve all orders
-		c.execute("SELECT o.FDIAManageID as id, o.OrderID as name, o.Status as status, o.InfFileName as inffile, other.FilePath as cdorder FROM dbo.OrderTable o, dbo.OtherTable other")
-
-		# loop through rows
-		for row in c:
-			# append to order list
-			orders.append(orderclass(str(row["id"]), row["name"], row["status"], osxpath(row["inffile"]), osxpath(row["cdorder"])))
-
-
-		# loop through orders
-		for order in orders:
-			log(order)
-
-			# is there a CdOrder.INF file? use it to fetch image rotation data and actual frame numbers (read from the film)
-			cdorder = []
-			if order.cdorder and os.path.isfile(tmp + order.cdorder):
-				f = file(tmp + order.cdorder, "rU")
-				lines = f.read().split("\n")
-				for l in lines:
-					if l.startswith("Frame"):
-						l = l.replace("[", "").replace("]", "").split(" ")[1::]
-						cdorder.append((int(l[0]), int(l[1]), l[2]))
-
-			# fetch SQL image data
-			c.execute(	"SELECT	o.ImageID as id, o.FileName as imgfile, i.InfFileName as inffile "
-						"FROM dbo.OutputImageTable o, dbo.InputImageTable i "
-						"WHERE o.FDIAManageID = " + order.id + " "
-						"AND i.FDIAManageID = o.FDIAManageID "
-						"AND i.ImageID = o.ImageID" )
-
-			# reset image list
-			images = []
-
-			# loop through SQL data att poll the list
-			for row in c:
-				# standard rotation and frame in case none was found
-				rotation = 270
-				frame = "00"
-
-				# loop through data from CdOrder.inf
-				for cd in cdorder:
-					if cd[0] == int(os.path.basename(osxpath(row["inffile"])).replace(".INF", "")):
-						rotation = [0, 270, 0, 180, 0][cd[1]]
-						frame = cd[2]
-
-				# add to image list
-				images.append(imageclass(str(row["id"]), osxpath(row["imgfile"]), osxpath(row["inffile"]), rotation, frame))
-
-			# for debugging
-			log(images)
-
-			# what status does the current order have? proceed accordingly
-			#
-			# (0 = Error, 2 = Waiting to convert)
-			# (4 = Waiting to write, 5 = Completed)
+sqlconn = pymssql.connect(win2000host, mssqluser, mssqlpass, "FDIA_DB")
 	
-			# if waiting to convert, export the files and change status into 5 (completed)
-			if order.status == 2:
-				exportimages(images, order.name, ".tif")
+# create named tuple classes for orders and images
+orderclass = namedtuple("order", ["id", "name", "status", "inffile", "cdorder"])
+imageclass = namedtuple("image", ["id", "imgfile", "inffile", "rotation", "frame"])
 
-				# change status of order to completed in DB
-				c.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order.id + "'")
+# reset list of orders waiting to be converted
+orders = []
 
-			# if completed, remove the order and files
-			elif order.status == 5:
+cursor = sqlconn.cursor(as_dict = True)
 
-				# find unique folders associated with current order (reset the set of directories first)
-				orderdirs = set()
+# retrieve all orders
+cursor.execute("SELECT o.FDIAManageID as id, o.OrderID as name, o.Status as status, o.InfFileName as inffile, other.FilePath as cdorder FROM dbo.OrderTable o, dbo.OtherTable other")
 
-				# add each path name to image or .INF file, set() eliminates duplicates
-				for image in images:
-					orderdirs.add(os.path.dirname(image.imgfile))
-					orderdirs.add(os.path.dirname(image.inffile))
+# loop through rows
+for row in cursor:
+	# append to order list
+	orders.append(orderclass(str(row["id"]), row["name"], row["status"], osxpath(row["inffile"]), osxpath(row["cdorder"])))
 
-				# remove images associated with order in DB
-				c.execute("DELETE FROM dbo.ImageTable WHERE FDIAManageID = '" + order.id + "'")
-				c.execute("DELETE FROM dbo.InputImageTable WHERE FDIAManageID = '" + order.id + "'")
-				c.execute("DELETE FROM dbo.OutputImageTable WHERE FDIAManageID = '" + order.id + "'")
-				c.execute("DELETE FROM dbo.OutputEzTable WHERE FDIAManageID = '" + order.id + "'")
-				c.execute("DELETE FROM dbo.OtherTable WHERE FDIAManageID = '" + order.id + "'")
-				c.execute("DELETE FROM dbo.Old_convertInformationTable WHERE FDIAManageID = '" + order.id + "'")
+# loop through orders
+for order in orders:
+	log(order)
 
-				log("DELETE FROM dbo.*Table WHERE FDIAManageID = " + order.id)
+	# is there a CdOrder.INF file? use it to fetch image rotation data and actual frame numbers (read from the film)
+	cdorder = []
+	if order.cdorder and os.path.isfile(tmp + order.cdorder):
+		f = file(tmp + order.cdorder, "rU")
+		lines = f.read().split("\n")
+		for l in lines:
+			if l.startswith("Frame"):
+				l = l.replace("[", "").replace("]", "").split(" ")[1::]
+				cdorder.append((int(l[0]), int(l[1]), l[2]))
+		f.close()
 
-				# remove order in DB
-				c.execute("DELETE FROM dbo.OrderTable WHERE FDIAManageID = '" + order.id + "'")
+	# fetch SQL image data
+	cursor.execute(	"SELECT	o.ImageID as id, o.FileName as imgfile, i.InfFileName as inffile "
+				"FROM dbo.OutputImageTable o, dbo.InputImageTable i "
+				"WHERE o.FDIAManageID = " + order.id + " "
+				"AND i.FDIAManageID = o.FDIAManageID "
+				"AND i.ImageID = o.ImageID" )
 
-				# remove order .INF file
-				if os.path.isfile(tmp + order.inffile):
-					log("os.remove(" + tmp + order.inffile + ")")
-					os.remove(tmp + order.inffile)
+	# reset image list
+	images = []
 
-				# loop through & remove the folders in InSpool and OutSpool
-				for d in orderdirs:
-					log("shutil.rmtree(" + tmp + d + ")")
-					if os.path.isdir(tmp + d):
-						shutil.rmtree(tmp + d, ignore_errors=True)
+	# loop through SQL data att poll the list
+	for row in cursor:
+		# standard rotation and frame in case none was found
+		rotation = 270
+		frame = "00"
 
-			# commit SQL changes to database
-			log("conn.commit()")
-			conn.commit()
+		# loop through data from CdOrder.inf
+		for cd in cdorder:
+			if cd[0] == int(os.path.basename(osxpath(row["inffile"])).replace(".INF", "")):
+				rotation = [0, 270, 0, 180, 0][cd[1]]
+				frame = cd[2]
+
+		# add to image list
+		images.append(imageclass(str(row["id"]), osxpath(row["imgfile"]), osxpath(row["inffile"]), rotation, frame))
+
+	# for debugging
+	log(images)
+
+	# what status does the current order have? proceed accordingly
+	#
+	# (0 = Error, 2 = Waiting to convert)
+	# (4 = Waiting to write, 5 = Completed)
+
+	# if waiting to convert, export the files and change status into 5 (completed)
+	if order.status == 2:
+		exportimages(images, order.name, ".tif")
+
+		# change status of order to completed in DB
+		cursor.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order.id + "'")
+
+		# commit SQL changes to database
+		log("conn.commit()")
+		conn.commit()
+
+	# if completed, remove the order and files
+	elif order.status == 5:
+
+		# find unique folders associated with current order (reset the set of directories first)
+		orderdirs = set()
+
+		# add each path name to image or .INF file, set() eliminates duplicates
+		for image in images:
+			orderdirs.add(os.path.dirname(image.imgfile))
+			orderdirs.add(os.path.dirname(image.inffile))
+
+		# remove images associated with order in DB
+		cursor.execute("DELETE FROM dbo.ImageTable WHERE FDIAManageID = '" + order.id + "'")
+		cursor.execute("DELETE FROM dbo.InputImageTable WHERE FDIAManageID = '" + order.id + "'")
+		cursor.execute("DELETE FROM dbo.OutputImageTable WHERE FDIAManageID = '" + order.id + "'")
+		cursor.execute("DELETE FROM dbo.OutputEzTable WHERE FDIAManageID = '" + order.id + "'")
+		cursor.execute("DELETE FROM dbo.OtherTable WHERE FDIAManageID = '" + order.id + "'")
+		cursor.execute("DELETE FROM dbo.Old_convertInformationTable WHERE FDIAManageID = '" + order.id + "'")
+
+		log("DELETE FROM dbo.*Table WHERE FDIAManageID = " + order.id)
+
+		# remove order in DB
+		cursor.execute("DELETE FROM dbo.OrderTable WHERE FDIAManageID = '" + order.id + "'")
+
+		# commit SQL changes to database
+		log("conn.commit()")
+		conn.commit()
+
+		# remove order .INF file
+		if os.path.isfile(tmp + order.inffile):
+			log("os.remove(" + tmp + order.inffile + ")")
+			os.remove(tmp + order.inffile)
+
+		# loop through & remove the folders in InSpool and OutSpool
+		for d in orderdirs:
+			if os.path.isdir(tmp + d):
+				log("shutil.rmtree(" + tmp + d + ")")
+				shutil.rmtree(tmp + d)
+
+	# end of orders loop
+
+sqlconn.close()		
