@@ -112,11 +112,12 @@ orders = []
 cursor = sqlconn.cursor(as_dict = True)
 
 # retrieve all orders
-cursor.execute("SELECT o.FDIAManageID as id, o.OrderID as name, o.Status as status, o.InfFileName as inffile, other.FilePath as cdorder FROM dbo.OrderTable o, dbo.OtherTable other")
+cursor.execute("SELECT o.FDIAManageID as id, o.OrderID as name, o.Status as status, o.InfFileName as inffile, other.FilePath as cdorder FROM dbo.OrderTable o, dbo.OtherTable other WHERE o.FDIAManageID = other.FDIAManageID")
 
 # loop through rows
 for row in cursor:
 	# append to order list
+	log("appending " + str(row["id"]))
 	orders.append(orderclass(str(row["id"]), row["name"], row["status"], osxpath(row["inffile"]), osxpath(row["cdorder"])))
 
 # loop through orders
@@ -126,12 +127,17 @@ for order in orders:
 	# is there a CdOrder.INF file? use it to fetch image rotation data and actual frame numbers (read from the film)
 	cdorder = []
 	if order.cdorder and os.path.isfile(tmp + order.cdorder):
-		f = file(tmp + order.cdorder, "rU")
-		lines = f.read().split("\n")
+		# open CdOrder.INF file
+		f = file(tmp + order.cdorder, "rU") # universal newline mode for DOS file support
+		# read the whole file and split into lines
+		lines = f.read().split("\n") 
 		for l in lines:
+			# fetch all lines beginning with "Frame"
 			if l.startswith("Frame"):
-				l = l.replace("[", "").replace("]", "").split(" ")[1::]
-				cdorder.append((int(l[0]), int(l[1]), l[2]))
+				# strip them of some aesthetics
+				l = l.replace("[", "").replace("]", "").split(" ")[1::] 
+				# ...and append to the list
+				cdorder.append((int(l[0]), int(l[1]), l[2])) 
 		f.close()
 
 	# fetch SQL image data
@@ -175,8 +181,8 @@ for order in orders:
 		cursor.execute("UPDATE dbo.OrderTable SET Status = 5 WHERE FDIAManageID = '" + order.id + "'")
 
 		# commit SQL changes to database
-		log("conn.commit()")
-		conn.commit()
+		log("sqlconn.commit()")
+		sqlconn.commit()
 
 	# if completed, remove the order and files
 	elif order.status == 5:
@@ -188,6 +194,8 @@ for order in orders:
 		for image in images:
 			orderdirs.add(os.path.dirname(image.imgfile))
 			orderdirs.add(os.path.dirname(image.inffile))
+
+		orderdirs.add(os.path.dirname(order.cdorder))
 
 		# remove images associated with order in DB
 		cursor.execute("DELETE FROM dbo.ImageTable WHERE FDIAManageID = '" + order.id + "'")
@@ -203,8 +211,8 @@ for order in orders:
 		cursor.execute("DELETE FROM dbo.OrderTable WHERE FDIAManageID = '" + order.id + "'")
 
 		# commit SQL changes to database
-		log("conn.commit()")
-		conn.commit()
+		log("sqlconn.commit()")
+		sqlconn.commit()
 
 		# remove order .INF file
 		if os.path.isfile(tmp + order.inffile):
