@@ -95,7 +95,7 @@ def exportimages(exportimages, ordername, extension = ".tif", path = outdir):
 			filename += "-" + image.id.zfill(2)
 
 		# save file
-		out.save(filename + extension)
+		out.save(filename + extension, dpi=(300, 300))
 
 	return
 
