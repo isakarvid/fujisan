@@ -6,7 +6,7 @@
 	<string>py.fujisan</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/bin/python</string>
+		<string>/usr/local/bin/python</string>
 		<string>/Users/Svartlab/Documents/Frontier/Scripts/fujisan/fujisan.py</string>
 	</array>
 	<key>StartInterval</key>
