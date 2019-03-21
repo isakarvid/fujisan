@@ -16,11 +16,8 @@ import fujirawimage # custom Pillow decoder
 tmp = "/tmp/fuji/" # working path for mounts, trailing slash please
 outdir = "/Users/Svartlab/Documents/Frontier/Ready" # output path
 
-
-win2000host = "10.0.1.183" #testar att skriva direkt till toshiban
-sambahost = "10.0.1.183" #mssql 2005 installerat lokalt pa toshiban
-
-
+win2000host = "10.0.1.183" # testar att skriva direkt till toshiban
+sambahost = "10.0.1.183" # mssql 2005 installerat lokalt pa toshiban
 
 # user/pass for MS SQL server
 mssqluser = "fdiaclient"
