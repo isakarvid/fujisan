@@ -23,6 +23,10 @@ sambahost = "10.0.1.183" # mssql 2005 installerat lokalt pa toshiban
 mssqluser = "fdiaclient"
 mssqlpass = "radiogaga"
 
+# mogrify + icc profile
+mogrify = "/usr/local/bin/mogrify"
+icc = "/Users/Svartlab/Documents/Frontier/Scripts/fuji.icm"
+
 # generate today's date for folders
 datestr = time.strftime("%Y%m%d")
 
@@ -103,6 +107,10 @@ def exportimages(exportimages, ordername, extension = ".tif", path = outdir):
 
     # save file
     im.save(filename + extension, dpi=(300, 300))
+
+    # assign icc profile
+    log("os.system(" + " ".join([mogrify, "-profile", icc, filename + extension]))
+    os.system(" ".join([mogrify, "-profile", icc, filename + extension]))
     log("export done")
 
   return
